@@ -1,9 +1,9 @@
 ---
 spec_id: 01-consolidate-and-retire
-status: ACTIVE
-closed_as: null
+status: CLOSED
+closed_as: SHIPPED
 since: 2026-09-11
-until: null
+until: 2026-09-11
 epic: foundation
 features: [evidence-consolidation, project-retirement, fork-hygiene]
 supersedes: []
@@ -131,33 +131,34 @@ be checked when a citation is questioned. Cost of keeping: 15 MB.
 
 # 3 · Tasks
 
-- [ ] **T1 — Back up both projects to `~/Projects/TBD/`.**
-      `mkdir -p ~/Projects/TBD` then one `tar czf` per project, `shasum -a 256` beside each.
-      **Check:** `tar tzf <archive> | wc -l` is non-zero and within one of the source file count
-      (`find <src> -type f | wc -l`), and `shasum -a 256 -c` prints `OK` for both.
+- [x] **T1 — Back up both projects to `~/Projects/TBD/`.**
+      **Observed:** pdfbay 37 source files → 37 archived; notebay 372 → 372. `shasum -c` `OK` twice.
+      217 KB and 10.8 MB.
 
-- [ ] **T2 — Write `~/Projects/TBD/README.md`.** What each archive is, the date, the successor
-      (this fork), and the exact restore command.
-      **Check:** the restore command in it runs verbatim into a scratch dir and produces a tree.
+- [x] **T2 — Write `~/Projects/TBD/README.md`.**
+      **Observed:** the restore command run verbatim produced 37 files, and
+      `selfref.mjs` executed *from the restored copy*. The archive is proven usable, not merely
+      present. Scratch removed.
 
-- [ ] **T3 — Copy the six load-bearing artifacts** per §2.1 into `docs/research/`, `references/`
-      and `spikes/docmodel/`.
-      **Check:** all six exist; `node spikes/docmodel/selfref.mjs` prints `ok`.
+- [x] **T3 — Copy the six load-bearing artifacts.**
+      **Observed:** all six landed; spike prints `ok`.
 
-- [ ] **T4 — Fix relative links in the moved documents.** Extract every `](...)` target that is not
-      `http`, test it from the new location, rewrite or demote each miss.
-      **Check:** a link-resolution pass reports zero unresolved relative links across
-      `docs/research/*.md` and `references/*.md`.
+- [x] **T4 — Fix relative links in the moved documents.**
+      **Observed:** the pass found four genuine breaks — `../references/genoffice.md` ×2 (wrong
+      depth from the new location) and `../../pdf-to-md-benchmark/analysis/report.md` (points
+      outside the fork). The first two were rewritten to `../../references/`; the benchmark link was
+      demoted to prose naming its absolute path, per R2. Remaining hit is
+      `![alt](assets/fig-6-1.png)` inside backticks in a table — an illustration of the markdown
+      form, not a link.
 
-- [ ] **T5 — Write `RETIRED.md` in `pdfbay/` and `notebay/`.** Date, successor path, what moved,
-      what deliberately did not, archive location.
-      **Check:** both files exist and name the archive path that T1 actually produced.
+- [x] **T5 — Write `RETIRED.md` in `pdfbay/` and `notebay/`.**
+      **Observed:** both exist and name the archives T1 produced. Each states what moved, what did
+      not, and why. pdfbay's records that displacement, the one-tree layout and ink capture were
+      **lost**, with the condition that would reverse the decision.
 
-- [ ] **T6 — Commit the fork scaffold on a branch.** `AGENTS.md`, `docs/steering/pillars.md`,
-      `.kiro/specs/01-…`, `docs/research/*`, `references/*`, `spikes/*` — on `officebay/main`, never
-      on `main`, so rebasing onto an upstream snapshot stays mechanical.
-      **Check:** `git log --oneline main..officebay/main` shows the scaffold commit; `git status`
-      clean; `git diff main --stat` touches **no** upstream file.
+- [x] **T6 — Commit the fork scaffold on a branch.**
+      **Observed:** `6e77e70` on `officebay/main`. `git diff main --diff-filter=M` is **empty** —
+      9 additions, 0 upstream files modified. Worktree clean.
 
 ---
 
@@ -184,5 +185,23 @@ and is recorded rather than gated.
 
 # 5 · Next action
 
-**T1** — create `~/Projects/TBD/` and archive both projects, then verify by listing before anything
-else is touched.
+**Closed `SHIPPED` 2026-09-11.** All six checks observed green (§4). Nothing carried forward,
+nothing dropped.
+
+**What this sprint proved, beyond its own tasks.** T4 justified the sprint: three links that
+resolved in their old homes broke silently on the move, including one into a repo deliberately left
+outside the fork. Copying the files would have produced a tree that looked complete and cited
+nothing. The link pass is the reusable part.
+
+**Next sprint — open `02` before writing product code.** The candidates, in the order the
+consolidation note ranks them:
+
+| candidate | why it might go first |
+|---|---|
+| **math grounding (G1)** | the flagship claim, and the cheapest experiment: `agent-core` already carries images end-to-end and the PDF app simply never passes them. Needs an eval corpus that is **not** Goodfellow — that is the baseline's best case and would falsely kill it |
+| **L1 section index (G2)** | upstream of G3 and G5; `selfref.mjs` is already here, and its heading-edit tradeoff is the first thing that sprint must resolve |
+
+**Parked, with a home named.** The `selfref.mjs` heading-edit case — a content-addressed
+`self_ref` survives a re-parse but dies when the heading text is edited, while a body edit leaves
+the ref valid and the cited quote stale. One id cannot carry both properties. It belongs to the
+sprint that builds L1, not to this one.
