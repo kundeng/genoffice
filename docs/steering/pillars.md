@@ -18,8 +18,13 @@ The thing a person touches for hours.
 **Current state.** 🟢 **Inherited and working.** genoffice ships it: `annotations.ts` is a single
 rotation-aware screen↔page transform in PDF points; `NoteMargin.tsx` is a real virtual margin with
 leader lines; `read_annotations` resolves the text under each highlight via `textUnderRect`.
-**Gap:** ink is invisible to the agent — `MARKUP_TYPE_BY_ANNOT` covers subtypes 9/10/12 and
-`toSavedNote` only type 1; **ink is subtype 15, in neither table**.
+**Ink is captured too** — `DrawLayer.tsx` records strokes as `paths: number[][]` in PDF page space
+and `save-pdf.ts:297` writes real `/Ink` annotations.
+
+**Gaps.** (a) The agent cannot read back ink the app itself wrote: `MARKUP_TYPE_BY_ANNOT` is
+`{9,10,12}` and subtype 15 is absent — one map entry. (b) Of the four mark renderings in
+`product.md` §4, only overlay and virtual margin ship; **dragged-apart does not exist** and is the
+distinctive one.
 
 ---
 

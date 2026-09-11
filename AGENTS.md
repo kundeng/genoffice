@@ -74,3 +74,15 @@ carries its own name.
 - **genoffice's PDF read path has no math handling at all.** Answers about equations on a
   legacy-encoded PDF are reconstructed from model priors, not extracted. On a modern Unicode-mapped
   PDF they are grounded. Nothing tells the reader which case they are in.
+
+## Document map
+
+| path | holds |
+|---|---|
+| `docs/steering/product.md` | the thesis, the audience constraint, the four mark renderings, build order |
+| `docs/steering/tech.md` | the stack, settled decisions, ingestion routing, anchoring, open questions |
+| `docs/steering/pillars.md` | P1–P5 and current state |
+| `docs/design/BRIEF-*.md` | self-contained briefs for an external designer — no repo access assumed |
+| `docs/research/` | the evidence base, including the extensibility audit |
+| `references/` | third-party provenance |
+| `.kiro/specs/` | sprints |
