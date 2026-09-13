@@ -32,12 +32,105 @@ What it added, by files changed: `apps/docs` (118), **`apps/latex` (83)**, **`ap
 (60)**, `apps/markdown` (27).
 
 `apps/office-addin` is the significant one: `@wiswork/office-addin`, a _"confirmation-first WisWork
-Agent task pane for Word, Excel, and PowerPoint"_ — a task pane inside **real Microsoft Office**,
-reusing `@wiswork/agent-core` and `@wiswork/ai-provider`. They are not competing with Word; they are
-putting their agent inside it, with the open-source suite as the engine supply.
+Agent task pane for Word, Excel, and PowerPoint"_. It is not a competitor to Word; it puts their
+agent inside Word, with the open-source suite as the engine supply.
 
-**Read across:** the packages were rescoped `@genoffice/*` → `@wiswork/*`, which is what makes the
-suite a reusable engine layer for a surface that is not the suite.
+#### How it reaches into Office
+
+Nothing is patched or injected. It is an **Office.js add-in** — Microsoft's supported extension
+platform. Office embeds a browser, and an add-in is a web page Office loads into a side panel and
+hands a document API to. The entry point is a manifest the user sideloads:
+
+```xml
+<!-- apps/office-addin/public/manifest.xml -->
+<OfficeApp xsi:type="TaskPaneApp">
+  <Hosts>
+    <Host Name="Document" />      <!-- Word -->
+    <Host Name="Workbook" />      <!-- Excel -->
+    <Host Name="Presentation" />  <!-- PowerPoint -->
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html?v=0.3.42" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
+```
+
+Word reads it, loads the page beside the document, and grants `ReadWriteDocument`. From there the
+pane calls `Office.context.document` like any web app.
+
+The work is split across two processes because the pane runs in Office's sandbox and cannot safely
+hold a long-lived credential:
+
+```
+┌─ Microsoft Word (real Word, the user's machine) ─────────┐
+│                                                          │
+│   the .docx         ┌── task pane (WisWork) ──────────┐  │
+│        ▲            │  taskpane.html + React          │  │
+│        │ Office.js  │  agent/     tool definitions    │  │
+│        └────────────┤  relay/     LLM session         │  │
+│         read/write  │  pc-bridge/ desktop link        │  │
+│                     └───────┬─────────────────────────┘  │
+└─────────────────────────────┼────────────────────────────┘
+                              │ HTTP, 127.0.0.1 only
+                              │ /v1/office/pairings, /v1/office/messages
+                              ▼
+              ┌─ WisWork desktop app (the fork) ─┐
+              │  holds the account credentials   │
+              │  @wiswork/agent-core             │
+              │  @wiswork/ai-provider ──► LLM    │
+              └──────────────────────────────────┘
+```
+
+`src/pc-bridge/session.ts` refuses any endpoint that is not loopback, so the bridge cannot be
+pointed at a remote host:
+
+```typescript
+function validateEndpoint(value: string): string {
+  const url = new URL(value)
+  if (
+    url.protocol !== 'http:' ||
+    url.hostname !== '127.0.0.1' ||
+    url.href !== `http://127.0.0.1:${url.port}/` ||
+    !url.port
+  )
+    throw new Error('invalid_bridge_endpoint')
+  return url.origin
+}
+```
+
+The pane finds the desktop app by probing localhost ports in batches of 8 with a 400 ms timeout
+against `/v1/office/health`, then pairs with a verification code the user approves on the desktop
+side. Status walks `offline → connecting → pending → connected`, with `rejected` and `expired` as
+terminal refusals.
+
+#### One edit, end to end
+
+```
+ 1. pane    → bridge      POST /v1/office/messages {prompt, host:'word'}
+ 2. bridge  → desktop     credentials attached, LLM called via ai-provider
+ 3. LLM     → desktop     tool call: write_document{mode:'replace', markdown}
+ 4. desktop → pane        tool frame returned over the bridge
+ 5. pane    → Office.js   READ first (get_document_text)
+ 6. pane                  render confirmation card: title, impact, before/after
+                          return `awaiting_user_confirmation`
+    ─────────────────── nothing written yet ───────────────────
+ 7. user                  clicks Confirm
+ 8. pane    → Office.js   ONE atomic OOXML replacement
+ 9. pane    → Office.js   re-read; compare normalized text and structure
+10. on mismatch           restore the range and prove recovery, else
+                          terminal `office_recovery_failed`
+```
+
+Two design choices worth borrowing. A write is a **proposal**, not an action — step 6 returns
+success while having changed nothing. And the mutation is **one transaction**: Markdown converts to
+OOXML in the pane and lands in a single Office.js call. Lists fail closed rather than use
+non-transactional multi-batch numbering APIs, so a half-applied list is impossible. `execute_office_js`
+does not evaluate JavaScript despite its name — it accepts a JSON declarative program of at most 32
+allowlisted operations.
+
+**Read across:** the packages were rescoped `@genoffice/*` → `@wiswork/*`, which is what lets a
+surface that is not the suite consume the same engines.
 
 ### 2 · besliky/airy — +39 / −44 — the agent-tooling thesis, and our P7 already executed
 
