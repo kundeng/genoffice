@@ -105,7 +105,9 @@ and `slides:cloud-page-generate` (server-side deck generation). The README state
 [providers.ts:274](../../packages/ai-provider/src/providers.ts#L274) falls back to `'genspark'`
 whenever a provider config is incomplete — missing model, base URL or key. A half-configured
 custom provider appears to work while talking to a different service. Any de-genspark work must fix
-this fallback in the same change, and prove it with an egress test.
+this fallback in the same change, and prove it with an egress test — `besliky/airy` ships exactly
+such a test (`tools/check-no-genspark.mjs`, Apache-2.0) after removing all four call sites from
+their tree, so the removal is demonstrably survivable and the guard is adoptable rather than novel.
 
 ## For the agent working here
 

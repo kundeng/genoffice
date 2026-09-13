@@ -1,104 +1,133 @@
-# Fork landscape: who else forked genoffice, and what we take from them
+# Fork landscape: what the serious forks are actually doing
 
-**Date:** 2026-09-13. **Status:** research, feeds `.kiro/specs/02` R6 (fork footprint) and the
-de-genspark / whitelabel pillar.
+**Date:** 2026-09-13, **revised** the same day after the first version was found shallow.
+**Status:** research, feeds `.kiro/specs/02` R6 (fork footprint) and pillar P7 (operational
+independence and product identity).
 
-889 forks exist. Fork counts are noise; what matters is which ones carry commits. Every number
-below is from `gh api repos/genspark-ai/genoffice/compare/main...<fork>:main`, so "ahead" means
-commits genuinely not in upstream.
+## What the first version got wrong
 
-## Measured: three forks are doing real work
+Recorded so the same mistakes are not repeated, not as narrative:
 
-| fork                                                          | ahead    | behind | what it is                                                                                                                                                       |
-| ------------------------------------------------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **AtomInnoLab/WisWork**                                       | **+755** | 129    | A different product. Added `apps/latex/` and `apps/office-addin/`, a websocket relay, PC pairing, Codex stream bridging. Ships ~daily (v0.6.77).                 |
-| **360org/vuaoffice**                                          | **+201** | 16     | Vietnamese whitelabel plus an ERP ("VuaHeThong Pro"). Private GitLab is primary; GitHub is a public mirror. Merges upstream weekly.                              |
-| **besliky/airy**                                              | **+39**  | 44     | Provider decoupling and rebrand. Removed the Genspark provider for BYOK-only, added an egress guard, rescoped packages to `@airy-office/*`, self-hosted updates. |
-| ghostship25, happytalkman, Brown226, kartboop, dv365lab, +880 | 0        | 25–161 | Stars-and-drift mirrors. Nothing to learn.                                                                                                                       |
+1. **Only `main` was compared.** `compare/main...<fork>:main` misses work on other branches.
+   `ghostship25/my_genoffice` was reported as "0 ahead, nothing to learn"; it has
+   `feature/local-first-ai` at +6 with Ollama support, a local RAG workspace, key-less provider
+   gating and a rebrand to KARYA. Branch enumeration is part of the method now.
+2. **Commit subjects were read instead of code.** "Removed the Genspark provider" was repeated from
+   a commit title. It is now verified by fetching the files.
+3. **"A different product" was asserted from a diffstat.** WisWork's README is genoffice's README
+   with the name replaced — same six apps, same feature list, same byte-preserving pitch. It is a
+   rebranded redistribution with additions, not a different product. A fork of a 671k-LOC office
+   suite does not set out to become something unrelated; it sets out to _own a distribution channel_
+   for the same thing.
+4. **12 of 885 forks were sampled.** Still true below, but now stated rather than implied.
 
-Nobody is ahead in `apps/slides/src/main/`. Whatever we do to the Slides op journal, we do alone.
+## The shape of the population
 
-## What we take, adapt, or avoid
+889 forks by GitHub's count, 885 enumerable. The overwhelming majority carry zero commits. Of the
+sampled set, four carry real work, and **every one of them rebrands**. That is the population's
+defining behavior, and the reason is structural: genoffice is Apache-2.0, so the code is free to
+take, while Apache-2.0 §6 does not license the marks — a redistributor _must_ rename to ship. Every
+serious fork is therefore a whitelabel by necessity, and the interesting question is what each one
+builds on top of that.
 
-### TAKE · airy's provider decoupling — this is our de-genspark recipe, already costed
+## The three that matter
 
-`besliky/airy` did exactly the pillar you named, in **39 commits**, and the commit titles read as a
-work plan:
+### 1 · AtomInnoLab/WisWork — +755 / −129 — channel play into Microsoft Office
 
-```
-feat(ai-provider)!: remove the genspark provider, default to BYOK-only
-chore: sweep stale gsk/genspark references from code paths
-chore(tools): genspark egress guard
-chore: rename workspace packages from @genoffice to @airy-office scope
-chore(i18n): drop orphan gsk keys and rebrand user strings
-feat(shell): in-app updater backed by github releases
-feat(brand): airy mark replaces genspark badge
-chore(brand): regenerate app icons from the icon-only mark
-ci: add release workflow for linux and windows builds
-feat(packaging): bundle mcp server into installers
-```
+**Thesis:** ship the suite under its own brand, then reach into the Microsoft install base.
 
-That is a proof the work is bounded, and a checklist. The pieces map onto four surfaces we have
-already located in this codebase:
+Its README is genoffice's text with the name swapped, and it contains **no attribution to genoffice
+or Genspark anywhere** — no "fork of", no upstream link. Signed macOS and Windows installers, a
+YouTube demo, v0.6.101, releases through "the AtomInnoLab release pipeline".
 
-| what to cut                      | where it lives                                                        | what it does today                                                                             |
-| -------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| hosted search / slide generation | `packages/ai-search/src/gsk.ts`                                       | calls `genspark.ai/api/tool_cli` for web search, image search, slide generation, transcription |
-| account login                    | `packages/ai-search/src/genoffice-auth.ts`                            | OAuth device flow against `genspark.ai`, stores an API token on disk                           |
-| cloud project sync               | `apps/shell/src/main/cloud-projects.ts`                               | syncs project lists from `GENSPARK_ORIGIN`                                                     |
-| server-side deck generation      | `slides:cloud-page-generate` in `apps/slides/src/main/slides-main.ts` | generates pages remotely, lands the returned pptx locally                                      |
+What it added, by files changed: `apps/docs` (118), **`apps/latex` (83)**, **`apps/office-addin`
+(60)**, `apps/markdown` (27).
 
-**One thing airy's list does not mention, and we must handle.** `activeProvider()` at
-[providers.ts:274](../../packages/ai-provider/src/providers.ts#L274) returns `'genspark'` whenever
-the selected provider's configuration is incomplete — missing model, missing base URL, missing key.
-A half-configured BYOK setup silently routes to Genspark instead of failing. Removing the provider
-without fixing that fallback turns a silent redirect into a crash; fixing the fallback is part of
-the same change. The egress guard airy added is the right second layer: a test that fails if any
-code path can still reach the host.
+`apps/office-addin` is the significant one: `@wiswork/office-addin`, a _"confirmation-first WisWork
+Agent task pane for Word, Excel, and PowerPoint"_ — a task pane inside **real Microsoft Office**,
+reusing `@wiswork/agent-core` and `@wiswork/ai-provider`. They are not competing with Word; they are
+putting their agent inside it, with the open-source suite as the engine supply.
 
-**Cost estimate for officebay:** airy's 39 commits included rebrand, icons, updater and CI. The
-provider-cut core is roughly the first ten. Our branding work (`AGENTS.md` already requires it —
-Apache-2.0 §6 does not license the GenOffice or Genspark marks) is the same job airy did, so the
-two pillars are one workstream, not two.
+**Read across:** the packages were rescoped `@genoffice/*` → `@wiswork/*`, which is what makes the
+suite a reusable engine layer for a surface that is not the suite.
 
-### ADAPT · WisWork proves a new app slots in cheaply
+### 2 · besliky/airy — +39 / −44 — the agent-tooling thesis, and our P7 already executed
 
-WisWork added `apps/latex/` and `apps/office-addin/` as **new app directories** and they work.
-That is direct evidence for the fork-discipline rule in `AGENTS.md`: new surfaces belong in new
-`apps/`, and the shell's `TabManager` absorbs them through the `createXView` / `requestXClose` /
-`TabKind` seam. For officebay's reading surface this is the pattern to copy — a new app, not edits
-spread through `apps/pdf`.
+**Thesis, in their words:** "an open-source office suite with a built-in **MCP copilot**" —
+`packages/mcp-server` exposes the document engines to Claude Code and other MCP clients, headless,
+so a coding agent can open and edit real `.docx`/`.xlsx` with no GUI, or edit the document open in
+the running app through a local socket bridge.
 
-What not to copy: WisWork is **129 commits behind** and its history is a wall of
-`fix(office): recover …` titles. It has drifted far enough that upstream is effectively a fossil
-for them. That is the failure mode our R6 rule exists to prevent.
+This is the only fork that is honest about its lineage — a "What is different from upstream"
+section naming GenOffice and linking it.
 
-### ADAPT · vuaoffice's merge cadence is the empirical argument for R6
+**Their three divergences, verified against the repo:**
 
-vuaoffice sits at **−16** by merging upstream weekly. WisWork sits at **−129** by not. Both carry
-large diffs (+201 and +755). The difference is cadence, not diff size.
+| claim                                                                                        | verification                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Genspark login, provider, `gsk` backend, `@genspark/cli`, auto-updater and analytics removed | `packages/ai-search/src/gsk.ts`, `packages/ai-search/src/genoffice-auth.ts` and `apps/shell/src/main/cloud-projects.ts` all return **404** in their tree                                                                                                                                                                                             |
+| `tools/check-no-genspark.mjs` guards regression                                              | fetched and read; scans `apps`, `packages`, `tools`, `scripts` for genspark.ai/.com domains, the retired device-code/`api_tokens`/`office_addin_auth` endpoints, and `@genspark/` dependencies in manifests, lockfiles and module specifiers. Documentation provenance is deliberately excluded from the scan so NOTICE/README attribution survives. |
+| `packages/mcp-server` added                                                                  | present in their package list                                                                                                                                                                                                                                                                                                                        |
 
-The forks carrying the most merge debt are the ones that edited
-`apps/docs/src/renderer/editor/` heavily — all three of them did. That directory is the
-fork-contested surface. It is a concrete input to the churn column in the component decomposition:
-**upstream churn and fork churn concentrate in the same place**, and anything officebay builds
-there pays twice.
+**This is P7, already done, by someone who published the guard.** Their egress check is the artifact
+I previously proposed we design; it is Apache-2.0 and directly adoptable, and its exclusion rule —
+scan code, spare attribution docs — is the detail we would have gotten wrong first time.
 
-### AVOID · vuaoffice's split-repo topology
+**What it does not tell us:** their 39 commits also carried rebrand, icons, updater and CI. The
+provider-removal core is a subset, not the whole 39, and the count should not be quoted as the cost
+of de-genspark alone.
 
-Private GitLab primary with a filtered public GitHub mirror, plus commits like
-`chore: sync public release and filter private files` and `fix(release): skip private brand gate on
-public mirror`. It works for them, but it adds a release-filtering step that must never fail open.
-Not worth it at our size.
+### 3 · 360org/vuaoffice — +201 / −16 — localization and vertical expansion
 
-## What this changes for spec 02
+**Thesis:** a Vietnamese-market office suite for one corporation ("360 CORP"), stated openly in the
+README as built on GenOffice under Apache-2.0 — correct attribution, unlike WisWork.
 
-1. **R6 gets measured evidence.** "Prefer the candidate with the smallest coherent rebase surface"
-   now has numbers behind it: the three forks that touched the Docs renderer editor carry 44–129
-   commits of debt; the one that added separate app directories carries its weight in new files
-   instead.
-2. **De-genspark + whitelabel is one bounded workstream**, ~10–39 commits by a comparable fork's
-   measure, touching four known files plus the `activeProvider` fallback. It is sized, not
-   speculative.
-3. **`apps/docs/src/renderer/editor/` is the highest-churn surface in the repo** by both upstream
-   and fork measures. Treat edits there as expensive.
+It follows the same six apps and adds a **seventh: VuaOffice Mail**, described as an AI-integrated
+email and calendar client _"thay thế Microsoft Office 365 Outlook"_ — replacing Outlook. Plus an
+ERP ("VuaHeThong Pro"), a 360 CORP account system, and its own AI Router.
+
+Its README carries a section on **conflict-handling procedure when pulling from upstream**, with
+mandatory steps so brand and AI-provider customizations are not overwritten. That is the discipline
+behind its −16: the process is written down and enforced, not incidental.
+
+## What we take
+
+| from          | take                                                           | why it is credible                                                                      |
+| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **airy**      | `tools/check-no-genspark.mjs`, adapted                         | Apache-2.0, read in full, already solves the attribution-vs-code scanning distinction   |
+| **airy**      | the de-genspark file list as a checklist                       | the three files verified absent in a shipping fork — the removal is provably survivable |
+| **vuaoffice** | a written upstream-merge procedure in the repo                 | −16 vs WisWork's −129, with the procedure as the visible difference                     |
+| **WisWork**   | new capability as a new `apps/` directory                      | three added apps work through the shell's `TabManager` seam                             |
+| **WisWork**   | package rescoping makes the engines reusable outside the suite | `@wiswork/*` let them build an Office task pane on the same engine layer                |
+
+## What we avoid
+
+- **WisWork's attribution posture.** Apache-2.0 §4 requires retaining notices; shipping upstream's
+  README as your own with no credit is at best poor practice. officebay attributes.
+- **WisWork's −129 drift**, whose history is a wall of `fix(office): recover …`.
+- **vuaoffice's split-repo topology** (private GitLab primary, filtered public mirror) — a release
+  filter that must never fail open, not worth it at our size.
+
+## The strategic read
+
+Nobody forks this to build something unrelated. The four active forks each take the same engine
+layer and point it at a distribution they can own: WisWork at Microsoft Office users, airy at coding
+agents, vuaoffice at a Vietnamese corporate market, KARYA at local-first/Ollama users. officebay's
+own thesis — a derived-artifact layer over reading and marking — is the same move aimed at a
+different surface, which makes these forks peers rather than competitors, and their solved problems
+directly reusable.
+
+**Two of them independently removed the Genspark dependency** (airy fully; KARYA via key-less
+providers and Ollama). P7 is not an unusual requirement — it is what everyone shipping this code
+does first.
+
+## Method and limits
+
+Comparisons via `gh api repos/genspark-ai/genoffice/compare/main...<fork>:<branch>`; file existence
+via the contents API; READMEs and the egress guard fetched and read.
+
+**Not covered:** 873 unsampled forks; whether any fork's added code is worth importing at the
+source level (only structure and intent were assessed); WisWork's relay/pairing infrastructure;
+whether airy's MCP server duplicates what officebay needs or could be adopted outright — **that
+last one is worth a dedicated look**, since it overlaps officebay's agent-facing ambitions
+directly.

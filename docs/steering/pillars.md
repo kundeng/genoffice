@@ -135,10 +135,14 @@ bring-your-own-key operation is inherited capability, not new work.
 appears to work while talking to upstream's service. Cutting the dependency without fixing that
 fallback converts a silent redirect into a crash; both belong in the same change.
 
-**Sizing.** A comparable fork (`besliky/airy`) performed provider removal, reference sweep, egress
-guard, package rescoping, rebrand, and a self-hosted updater in 39 commits — evidence that this is a
-bounded workstream rather than an open-ended one. Detail:
-`docs/research/2026-09-13-fork-landscape.md`.
+**Precedent.** `besliky/airy` has already done this and ships it: the Genspark login, provider,
+`gsk` backend, `@genspark/cli` dependency, auto-updater and analytics are removed, AI is
+bring-your-own-key only, and `tools/check-no-genspark.mjs` fails the build if any genspark endpoint
+or dependency returns. Verified by fetching their tree — `gsk.ts`, `genoffice-auth.ts` and
+`cloud-projects.ts` are absent. Their guard is Apache-2.0 and adoptable rather than something we
+design from scratch. A second fork (`ghostship25`, rebranded KARYA) reached the same place by adding
+Ollama and key-less providers. P7 is the normal first move for anyone shipping this code, not an
+unusual requirement. Detail: `docs/research/2026-09-13-fork-landscape.md`.
 
 ## Balance rule
 
