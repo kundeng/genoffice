@@ -1,25 +1,13 @@
 # Fork landscape: what the serious forks are actually doing
 
-**Date:** 2026-09-13, **revised** the same day after the first version was found shallow.
-**Status:** research, feeds `.kiro/specs/02` R6 (fork footprint) and pillar P7 (operational
-independence and product identity).
+**Date:** 2026-09-13. **Status:** research, feeds `.kiro/specs/02` R6 (fork footprint) and pillar P7
+(operational independence and product identity).
 
-## What the first version got wrong
-
-Recorded so the same mistakes are not repeated, not as narrative:
-
-1. **Only `main` was compared.** `compare/main...<fork>:main` misses work on other branches.
-   `ghostship25/my_genoffice` was reported as "0 ahead, nothing to learn"; it has
-   `feature/local-first-ai` at +6 with Ollama support, a local RAG workspace, key-less provider
-   gating and a rebrand to KARYA. Branch enumeration is part of the method now.
-2. **Commit subjects were read instead of code.** "Removed the Genspark provider" was repeated from
-   a commit title. It is now verified by fetching the files.
-3. **"A different product" was asserted from a diffstat.** WisWork's README is genoffice's README
-   with the name replaced — same six apps, same feature list, same byte-preserving pitch. It is a
-   rebranded redistribution with additions, not a different product. A fork of a 671k-LOC office
-   suite does not set out to become something unrelated; it sets out to _own a distribution channel_
-   for the same thing.
-4. **12 of 885 forks were sampled.** Still true below, but now stated rather than implied.
+**Method.** Enumerate a fork's branches before comparing — work often sits outside `main`, and a
+`compare/main...<fork>:main` alone reports such a fork as empty. Compare each branch via
+`gh api repos/genspark-ai/genoffice/compare/main...<fork>:<branch>`, then read the fork's README and
+fetch the files a claim depends on. Commit subjects state intent, not outcome; a removal is
+confirmed by the file being absent from the tree.
 
 ## The shape of the population
 
@@ -69,13 +57,12 @@ section naming GenOffice and linking it.
 | `tools/check-no-genspark.mjs` guards regression                                              | fetched and read; scans `apps`, `packages`, `tools`, `scripts` for genspark.ai/.com domains, the retired device-code/`api_tokens`/`office_addin_auth` endpoints, and `@genspark/` dependencies in manifests, lockfiles and module specifiers. Documentation provenance is deliberately excluded from the scan so NOTICE/README attribution survives. |
 | `packages/mcp-server` added                                                                  | present in their package list                                                                                                                                                                                                                                                                                                                        |
 
-**This is P7, already done, by someone who published the guard.** Their egress check is the artifact
-I previously proposed we design; it is Apache-2.0 and directly adoptable, and its exclusion rule —
-scan code, spare attribution docs — is the detail we would have gotten wrong first time.
+**This is P7, already done, by someone who published the guard.** The egress check is Apache-2.0 and
+directly adoptable rather than something to design. Its exclusion rule is the part to keep: scan
+code, spare the attribution docs, so the guard cannot pass by deleting a NOTICE.
 
-**What it does not tell us:** their 39 commits also carried rebrand, icons, updater and CI. The
-provider-removal core is a subset, not the whole 39, and the count should not be quoted as the cost
-of de-genspark alone.
+**Sizing caveat.** Their 39 commits also carried rebrand, icons, updater and CI, so the number is
+not the cost of provider removal alone.
 
 ### 3 · 360org/vuaoffice — +201 / −16 — localization and vertical expansion
 
