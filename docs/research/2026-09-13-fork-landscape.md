@@ -1,53 +1,63 @@
-# Fork landscape: what the serious forks are actually doing
+# Fork landscape: what the three active forks built, and how
 
 **Date:** 2026-09-13. **Status:** research, feeds `.kiro/specs/02` R6 (fork footprint) and pillar P7
 (operational independence and product identity).
 
-**Method.** Enumerate a fork's branches before comparing — work often sits outside `main`, and a
-`compare/main...<fork>:main` alone reports such a fork as empty. Compare each branch via
-`gh api repos/genspark-ai/genoffice/compare/main...<fork>:<branch>`, then read the fork's README and
-fetch the files a claim depends on. Commit subjects state intent, not outcome; a removal is
-confirmed by the file being absent from the tree.
+**Method.** Clone each fork shallow and read the source locally; branch listings and commit subjects
+state intent, not outcome. Compare package and app inventories against our pinned baseline
+(`d35d770`) to find real additions and removals. Verify a claimed removal by the file's absence from
+the tree, and a claimed capability by the code that implements it. GitHub's `compare` ahead/behind
+counts are a starting filter only — they count commits, including commits that delete the product.
 
-## The shape of the population
+## Baseline for comparison
 
-889 forks by GitHub's count, 885 enumerable. The overwhelming majority carry zero commits. Of the
-sampled set, four carry real work, and **every one of them rebrands**. That is the population's
-defining behavior, and the reason is structural: genoffice is Apache-2.0, so the code is free to
-take, while Apache-2.0 §6 does not license the marks — a redistributor _must_ rename to ship. Every
-serious fork is therefore a whitelabel by necessity, and the interesting question is what each one
-builds on top of that.
+|                                 | apps                                             | packages                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **genoffice (ours, `d35d770`)** | docs, html, markdown, pdf, sheets, shell, slides | agent-core, ai-provider, ai-search, docx-engine, electron-utils, file-parse, font-metrics, html2docx, i18n, pdf2docx, pptx-engine, pptx-render, project-store, ui |
 
-## The three that matter
+## 1 · AtomInnoLab/WisWork — a platform rebuild, not a rebrand
 
-### 1 · AtomInnoLab/WisWork — +755 / −129 — channel play into Microsoft Office
+**What it is.** The largest divergence by far: 8 apps, 22 packages. It keeps genoffice's six editors
+and adds `apps/latex` and `apps/office-addin`, but the real work is in ten new packages totalling
+~35,000 LOC — and it _drops_ `html2docx` and `pdf2docx`, so the local PDF→Word conversion genoffice
+advertises is gone.
 
-**Thesis:** ship the suite under its own brand, then reach into the Microsoft install base.
+| new package                 |    LOC | what it does                                                                                                              |
+| --------------------------- | -----: | ------------------------------------------------------------------------------------------------------------------------- |
+| `codex-bridge`              | 15,574 | drives OpenAI's **Codex app-server** over JSON-RPC: process manager, tool router, dynamic MCP gateway, protocol recording |
+| `latex-project`             |  5,542 | LaTeX project model                                                                                                       |
+| `latex-compiler`            |  4,485 | LaTeX compilation                                                                                                         |
+| `agent-runtime`             |  1,972 | agent execution layer above `agent-core`                                                                                  |
+| `office-bridge`             |  1,929 | the Word/Excel/PowerPoint transport                                                                                       |
+| `presentation-verification` |  1,823 | post-edit deck verification                                                                                               |
+| `presentation-ops`          |  1,597 | deck operation model                                                                                                      |
+| `auth`                      |  1,476 | **their own OIDC identity provider**                                                                                      |
+| `agent-harness`             |    638 | agent test harness                                                                                                        |
+| `pdf-viewer`                |    419 | extracted PDF view                                                                                                        |
 
-Its README is genoffice's text with the name swapped, and it contains **no attribution to genoffice
-or Genspark anywhere** — no "fork of", no upstream link. Signed macOS and Windows installers, a
-YouTube demo, v0.6.101, releases through "the AtomInnoLab release pipeline".
+**Their own identity system**, in `packages/auth/src/config.ts`:
 
-What it added, by files changed: `apps/docs` (118), **`apps/latex` (83)**, **`apps/office-addin`
-(60)**, `apps/markdown` (27).
+```typescript
+authorizationEndpoint:        'https://auth.wispaper.ai/oidc/auth',
+authorizationResponseIssuer:  'https://auth.wispaper.ai/oidc',
+callbackEndpoint:  'https://gateway.wispaper.ai/api/v1/auth/user/callback',
+refreshEndpoint:   'https://gateway.wispaper.ai/api/v1/auth/user/refresh',
+```
 
-`apps/office-addin` is the significant one: `@wiswork/office-addin`, a _"confirmation-first WisWork
-Agent task pane for Word, Excel, and PowerPoint"_. It is not a competitor to Word; it puts their
-agent inside Word, with the open-source suite as the engine supply.
+They removed Genspark's account system and built a replacement — OIDC with issuer validation, a
+gateway, refresh flow. That is not rebranding; it is standing up the same class of service under
+their own domain.
 
-#### How it reaches into Office
+### How the Office add-in works
 
-Nothing is patched or injected. It is an **Office.js add-in** — Microsoft's supported extension
-platform. Office embeds a browser, and an add-in is a web page Office loads into a side panel and
-hands a document API to. The entry point is a manifest the user sideloads:
+`apps/office-addin` is an **Office.js add-in** — Microsoft's supported extension platform, nothing
+patched or injected. Office embeds a browser; an add-in is a web page Office loads into a side panel
+and grants a document API. The manifest is what the user sideloads:
 
 ```xml
-<!-- apps/office-addin/public/manifest.xml -->
 <OfficeApp xsi:type="TaskPaneApp">
   <Hosts>
-    <Host Name="Document" />      <!-- Word -->
-    <Host Name="Workbook" />      <!-- Excel -->
-    <Host Name="Presentation" />  <!-- PowerPoint -->
+    <Host Name="Document" /><Host Name="Workbook" /><Host Name="Presentation" />
   </Hosts>
   <DefaultSettings>
     <SourceLocation DefaultValue="https://localhost:3000/taskpane.html?v=0.3.42" />
@@ -56,158 +66,177 @@ hands a document API to. The entry point is a manifest the user sideloads:
 </OfficeApp>
 ```
 
-Word reads it, loads the page beside the document, and grants `ReadWriteDocument`. From there the
-pane calls `Office.context.document` like any web app.
-
-The work is split across two processes because the pane runs in Office's sandbox and cannot safely
-hold a long-lived credential:
+**The agent loop runs in the desktop app; the pane is a tool provider.** This is the part that
+determines the whole design. `Office.context.document` exists only inside Office's embedded browser,
+so the desktop process cannot reach the open `.docx`. Credentials cannot live in the sandboxed pane.
+So the loop and the document are in different processes, and tool calls travel between them:
 
 ```
-┌─ Microsoft Word (real Word, the user's machine) ─────────┐
-│                                                          │
-│   the .docx         ┌── task pane (WisWork) ──────────┐  │
-│        ▲            │  taskpane.html + React          │  │
-│        │ Office.js  │  agent/     tool definitions    │  │
-│        └────────────┤  relay/     LLM session         │  │
-│         read/write  │  pc-bridge/ desktop link        │  │
-│                     └───────┬─────────────────────────┘  │
-└─────────────────────────────┼────────────────────────────┘
-                              │ HTTP, 127.0.0.1 only
-                              │ /v1/office/pairings, /v1/office/messages
-                              ▼
-              ┌─ WisWork desktop app (the fork) ─┐
-              │  holds the account credentials   │
-              │  @wiswork/agent-core             │
-              │  @wiswork/ai-provider ──► LLM    │
-              └──────────────────────────────────┘
+   WisWork PC (desktop)                     task pane (inside Word)
+   ─────────────────────                    ───────────────────────
+   agent-runtime + agent-core               toolHandler()
+   ai-provider ──► LLM                      Office.js: getOoxml / insertOoxml
+           │                                        ▲
+           │  relay.tool_call                       │  office.tool_result
+           │  {turn_id, call_id, generation,        │  {call_id, output, is_error}
+           │   tool_name, input}                    │
+           └──────────────► Relay (WSS) ◄───────────┘
+                    wss://office.8-216-134-194.sslip.io/office-relay
 ```
 
-`src/pc-bridge/session.ts` refuses any endpoint that is not loopback, so the bridge cannot be
-pointed at a remote host:
+Frame directions confirm the flow: the pane **receives** `relay.start`, `relay.tool_call`,
+`relay.chunk`, `relay.done`; it **sends** `office.request`, `office.tool_result`, `office.cancel`.
+One user prompt is one `office.request`; the agent then fires many tool calls back into the pane
+before streaming the answer.
+
+**Why a server at all:** both ends are behind NAT. Office's sandboxed browser cannot listen, and the
+desktop app opens no inbound port, so two outbound WSS connections meet at a rendezvous. The Relay
+matches `session_id` and forwards opaque frames. A loopback transport exists
+(`VITE_WISWORK_OFFICE_TRANSPORT=loopback`, `127.0.0.1` only) but is **rollback-only and never
+selected automatically**.
+
+Every inbound tool call is validated against local state before executing — `exactKeys` rejects any
+frame with extra or missing fields, a replayed `call_id` is refused, and a call from a stale
+`generation` is refused.
+
+**OOXML access is real, at two depths.** Word goes through Office.js: `body.getOoxml()` and
+`body.insertOoxml(xml, 'Replace')`, parsed with DOM over the `w:` namespace. PowerPoint goes deeper —
+`powerpoint-package.ts` uses JSZip plus fast-xml-parser to open the `.pptx` **zip container** and
+swap parts by path (`slide`, `chart`, `master`), with the parser set `preserveOrder: true,
+processEntities: false, trimValues: false` so untouched parts round-trip unchanged.
+
+**OneNote is not supported** — the manifest declares only Word/Excel/PowerPoint, and `onenote`
+appears nowhere in the repo. It also could not use this design: OneNote has no OOXML, so
+`getOoxml`, package editing and OOXML fingerprinting have no counterpart there.
+
+### The write path — the pattern worth stealing
+
+```
+1. snapshot   original = body.getOoxml();  beforeFingerprint = fingerprint(original)
+2. build      target = buildDocumentWriteOoxml(original, write)   // markdown → w:p/w:tbl
+3. confirm    render card; return `awaiting_user_confirmation`    // nothing written yet
+4. write      body.insertOoxml(target, 'Replace'); await sync()   // ONE atomic call
+5. converge   readUntilConverged(accept: fingerprint(v) !== before
+                                      && verifyNativeDocumentWrite(original, v, write))
+6. adjudicate read failed     → office_state_uncertain
+              not verified    → restore original, prove recovery
+              unprovable      → office_recovery_failed (terminal)
+```
+
+Three decisions worth borrowing. The write is **one** `insertOoxml` over the whole body, so Word
+sees a single change and the user gets one undo step — which is why lists _fail closed_ rather than
+use non-transactional multi-batch numbering APIs. The accept predicate needs **both** "something
+changed" and "changed correctly", because either alone accepts the user's own concurrent typing or a
+stale read. And `office_state_uncertain` is a distinct outcome from failure: when the write threw
+_and_ the read-back failed, it reports not knowing rather than guessing.
+
+**Licensing and posture.** Apache-2.0, `ee/` deleted entirely, no billing or quota code anywhere.
+Its README is genoffice's text with the name swapped and **no attribution** — no "fork of", no
+upstream link — though the repo `homepage` field still points at `genspark.ai`, unscrubbed. The
+monetizable position is the Relay and `wispaper.ai` identity, neither of which Apache-2.0 obliges
+them to publish.
+
+## 2 · besliky/airy — agent tooling, and P7 already executed
+
+**What it is.** The smallest real divergence and the most disciplined. Same 7 apps as ours, 15
+packages: ours minus nothing, plus **`packages/mcp-server`** (8,481 LOC).
+
+It exposes the document engines to coding agents over MCP — `open_document`, `read_document`,
+`apply_ops`, `insert_content`, `save_document`, `close_document`, `undo`, plus a **`live_*`** family
+(`live_apply_ops`, `live_get_context`, `live_status`, `live_undo`) that edits the document open in
+the running desktop app.
+
+**The live bridge is genuinely local** — no server, unlike WisWork:
 
 ```typescript
-function validateEndpoint(value: string): string {
-  const url = new URL(value)
-  if (
-    url.protocol !== 'http:' ||
-    url.hostname !== '127.0.0.1' ||
-    url.href !== `http://127.0.0.1:${url.port}/` ||
-    !url.port
-  )
-    throw new Error('invalid_bridge_endpoint')
-  return url.origin
-}
+// Airy live bridge wire protocol (client side): FIFO NDJSON over a Unix domain
+// socket (linux/mac) or a Windows named pipe. Lightweight twin of
+// apps/shell/src/main/bridge/protocol.ts — duplicated on purpose so the MCP
+// package never imports app (Electron-adjacent) sources.
+export const BRIDGE_PROTOCOL_VERSION = 1
 ```
 
-The pane finds the desktop app by probing localhost ports in batches of 8 with a 400 ms timeout
-against `/v1/office/health`, then pairs with a verification code the user approves on the desktop
-side. Status walks `offline → connecting → pending → connected`, with `rejected` and `expired` as
-terminal refusals.
+That comment states a boundary rule we should adopt directly: the headless package never imports
+Electron-adjacent sources, and the protocol is deliberately duplicated to keep it that way.
 
-#### One edit, end to end
+Its error codes are a domain model worth copying — `not_docs_tab`, `no_active_document`,
+`tab_closed`, `stale_document`, `nothing_to_undo` — each naming a real failure of editing a document
+a human is also using.
 
-```
- 1. pane    → bridge      POST /v1/office/messages {prompt, host:'word'}
- 2. bridge  → desktop     credentials attached, LLM called via ai-provider
- 3. LLM     → desktop     tool call: write_document{mode:'replace', markdown}
- 4. desktop → pane        tool frame returned over the bridge
- 5. pane    → Office.js   READ first (get_document_text)
- 6. pane                  render confirmation card: title, impact, before/after
-                          return `awaiting_user_confirmation`
-    ─────────────────── nothing written yet ───────────────────
- 7. user                  clicks Confirm
- 8. pane    → Office.js   ONE atomic OOXML replacement
- 9. pane    → Office.js   re-read; compare normalized text and structure
-10. on mismatch           restore the range and prove recovery, else
-                          terminal `office_recovery_failed`
-```
+**De-genspark, verified.** `packages/ai-search/src/` retains only `index.ts`, `media-tools.ts`,
+`search-tools.ts`, `shared.ts` — `gsk.ts` and `genoffice-auth.ts` are gone, as is
+`apps/shell/src/main/cloud-projects.ts`. The regression guard is `tools/check-no-genspark.mjs` (126
+lines), wired as `check:no-genspark` in `package.json`. It scans `apps`, `packages`, `tools`,
+`scripts` for genspark domains, the retired device-code/`api_tokens`/`office_addin_auth` endpoints,
+and `@genspark/` dependencies in manifests, lockfiles and module specifiers — while **excluding
+documentation**, so NOTICE and README attribution survive rather than being deleted to pass the gate.
 
-Two design choices worth borrowing. A write is a **proposal**, not an action — step 6 returns
-success while having changed nothing. And the mutation is **one transaction**: Markdown converts to
-OOXML in the pane and lands in a single Office.js call. Lists fail closed rather than use
-non-transactional multi-batch numbering APIs, so a half-applied list is impossible. `execute_office_js`
-does not evaluate JavaScript despite its name — it accepts a JSON declarative program of at most 32
-allowlisted operations.
+Packages were rescoped `@genoffice/*` → `@airy-office/*`. The README has a "What is different from
+upstream" section naming GenOffice and linking it — the only fork of the three that attributes
+correctly.
 
-**Read across:** the packages were rescoped `@genoffice/*` → `@wiswork/*`, which is what lets a
-surface that is not the suite consume the same engines.
+## 3 · 360org/vuaoffice — a release channel, not a source fork
 
-### 2 · besliky/airy — +39 / −44 — the agent-tooling thesis, and our P7 already executed
+**What its GitHub repository actually contains: 48 files and no source code.** No `apps/`, no
+`packages/` — 18 webp images, 5 workflow files, 4 markdown documents, a LICENSE and a NOTICE. The
+most recent commit, `2994fb9 chore: sync public release and filter private files`, deletes the
+entire codebase.
 
-**Thesis, in their words:** "an open-source office suite with a built-in **MCP copilot**" —
-`packages/mcp-server` exposes the document engines to Claude Code and other MCP clients, headless,
-so a coding agent can open and edit real `.docx`/`.xlsx` with no GUI, or edit the document open in
-the running app through a local socket bridge.
+Its `.githubignore` strips only secrets (`.env`, `credentials/`, `*.pem`, backups, logs), so the
+missing source is a separate, deliberate decision: development happens on private GitLab and GitHub
+carries branding, documentation and the release pipeline.
 
-This is the only fork that is honest about its lineage — a "What is different from upstream"
-section naming GenOffice and linking it.
+**So its "+201 ahead" counts commits that remove the product.** Ahead/behind numbers cannot
+distinguish that from 201 commits of features, which is the reason this pass reads trees rather than
+counts.
 
-**Their three divergences, verified against the repo:**
-
-| claim                                                                                        | verification                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Genspark login, provider, `gsk` backend, `@genspark/cli`, auto-updater and analytics removed | `packages/ai-search/src/gsk.ts`, `packages/ai-search/src/genoffice-auth.ts` and `apps/shell/src/main/cloud-projects.ts` all return **404** in their tree                                                                                                                                                                                             |
-| `tools/check-no-genspark.mjs` guards regression                                              | fetched and read; scans `apps`, `packages`, `tools`, `scripts` for genspark.ai/.com domains, the retired device-code/`api_tokens`/`office_addin_auth` endpoints, and `@genspark/` dependencies in manifests, lockfiles and module specifiers. Documentation provenance is deliberately excluded from the scan so NOTICE/README attribution survives. |
-| `packages/mcp-server` added                                                                  | present in their package list                                                                                                                                                                                                                                                                                                                        |
-
-**This is P7, already done, by someone who published the guard.** The egress check is Apache-2.0 and
-directly adoptable rather than something to design. Its exclusion rule is the part to keep: scan
-code, spare the attribution docs, so the guard cannot pass by deleting a NOTICE.
-
-**Sizing caveat.** Their 39 commits also carried rebrand, icons, updater and CI, so the number is
-not the cost of provider removal alone.
-
-### 3 · 360org/vuaoffice — +201 / −16 — localization and vertical expansion
-
-**Thesis:** a Vietnamese-market office suite for one corporation ("360 CORP"), stated openly in the
-README as built on GenOffice under Apache-2.0 — correct attribution, unlike WisWork.
-
-It follows the same six apps and adds a **seventh: VuaOffice Mail**, described as an AI-integrated
-email and calendar client _"thay thế Microsoft Office 365 Outlook"_ — replacing Outlook. Plus an
-ERP ("VuaHeThong Pro"), a 360 CORP account system, and its own AI Router.
-
-Its README carries a section on **conflict-handling procedure when pulling from upstream**, with
-mandatory steps so brand and AI-provider customizations are not overwritten. That is the discipline
-behind its −16: the process is written down and enforced, not incidental.
+What can still be read: the README (Vietnamese, correctly attributing GenOffice under Apache-2.0)
+describes seven apps — the six inherited plus **VuaOffice Mail**, an AI email/calendar client
+explicitly positioned as replacing Outlook — plus an ERP ("VuaHeThong Pro"), a 360 CORP account
+system, and their own AI Router. Whether that code is good is unknowable from here.
 
 ## What we take
 
-| from          | take                                                           | why it is credible                                                                      |
-| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **airy**      | `tools/check-no-genspark.mjs`, adapted                         | Apache-2.0, read in full, already solves the attribution-vs-code scanning distinction   |
-| **airy**      | the de-genspark file list as a checklist                       | the three files verified absent in a shipping fork — the removal is provably survivable |
-| **vuaoffice** | a written upstream-merge procedure in the repo                 | −16 vs WisWork's −129, with the procedure as the visible difference                     |
-| **WisWork**   | new capability as a new `apps/` directory                      | three added apps work through the shell's `TabManager` seam                             |
-| **WisWork**   | package rescoping makes the engines reusable outside the suite | `@wiswork/*` let them build an Office task pane on the same engine layer                |
+| from        | take                                                               | why                                                                                                                                  |
+| ----------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **airy**    | `tools/check-no-genspark.mjs`, adapted                             | Apache-2.0, 126 lines, CI-wired, and its scan/exclude split (code yes, attribution docs no) is the detail a first attempt gets wrong |
+| **airy**    | the de-genspark removal set                                        | three files verified absent from a shipping fork — the removal is survivable                                                         |
+| **airy**    | "the headless package never imports Electron-adjacent sources"     | states our own `packages/*` Electron-free rule as an enforced boundary, with protocol duplication as the accepted cost               |
+| **airy**    | the live-bridge error vocabulary                                   | `stale_document`, `not_docs_tab`, `no_active_document` name failures officebay's write-back path will hit                            |
+| **WisWork** | the confirm → atomic write → fingerprint-verify → restore sequence | the template for mutating a document a human is editing, including `office_state_uncertain` as a distinct outcome from failure       |
+| **WisWork** | fail-closed over partial application                               | lists refuse rather than use non-transactional APIs                                                                                  |
+| **WisWork** | a new capability as a new `apps/` directory                        | two added apps work through the shell's `TabManager` seam                                                                            |
 
 ## What we avoid
 
+- **WisWork's scale.** 35,000 LOC of new packages, a second identity provider, a relay service, and
+  a Codex bridge is a platform rebuild with a permanent rebase cost (129 behind).
 - **WisWork's attribution posture.** Apache-2.0 §4 requires retaining notices; shipping upstream's
-  README as your own with no credit is at best poor practice. officebay attributes.
-- **WisWork's −129 drift**, whose history is a wall of `fix(office): recover …`.
-- **vuaoffice's split-repo topology** (private GitLab primary, filtered public mirror) — a release
-  filter that must never fail open, not worth it at our size.
+  README as your own with no credit is not a model to copy. officebay attributes.
+- **Dropping `pdf2docx` / `html2docx`** as WisWork did — those are capabilities our P4 depends on.
+- **vuaoffice's split-repo topology.** A public mirror with the source filtered out means the
+  release pipeline must never fail open, and nothing is externally reviewable.
 
-## The strategic read
+## What this says about rebranding
 
-Nobody forks this to build something unrelated. The four active forks each take the same engine
-layer and point it at a distribution they can own: WisWork at Microsoft Office users, airy at coding
-agents, vuaoffice at a Vietnamese corporate market, KARYA at local-first/Ollama users. officebay's
-own thesis — a derived-artifact layer over reading and marking — is the same move aimed at a
-different surface, which makes these forks peers rather than competitors, and their solved problems
-directly reusable.
+All three rebrand, because Apache-2.0 gives the code and withholds the marks (§6) — renaming is the
+entry fee for shipping, not a strategy. The strategy is what each one does _after_:
 
-**Two of them independently removed the Genspark dependency** (airy fully; KARYA via key-less
-providers and Ollama). P7 is not an unusual requirement — it is what everyone shipping this code
-does first.
+- **WisWork** rebuilt the hosted layer under its own domains (`wispaper.ai` identity, their Relay)
+  and reached into Microsoft Office. Maximum ambition, maximum carrying cost.
+- **airy** removed the hosted layer entirely and made the engines callable by coding agents. Minimum
+  surface, cleanest rebase position, and the only one that documents its lineage honestly.
+- **vuaoffice** kept the product private and used GitHub purely as a distribution channel.
 
-## Method and limits
+officebay's P7 sits closest to airy: cut the hosted dependency, keep the engines, add a layer
+upstream does not have. Their egress guard, package rescoping and attribution section are directly
+reusable, and their MCP server overlaps officebay's agent-facing ambitions enough to merit a
+dedicated decision — adopt, or build alongside.
 
-Comparisons via `gh api repos/genspark-ai/genoffice/compare/main...<fork>:<branch>`; file existence
-via the contents API; READMEs and the egress guard fetched and read.
+## Limits
 
-**Not covered:** 873 unsampled forks; whether any fork's added code is worth importing at the
-source level (only structure and intent were assessed); WisWork's relay/pairing infrastructure;
-whether airy's MCP server duplicates what officebay needs or could be adopted outright — **that
-last one is worth a dedicated look**, since it overlaps officebay's agent-facing ambitions
-directly.
+Read: package/app inventories, the Office add-in transport and write path, airy's MCP server surface
+and bridge protocol, WisWork's auth config, and both forks' de-genspark state. **Not read:** the
+quality of WisWork's LaTeX packages, `codex-bridge`'s internals beyond its shape, airy's MCP tool
+implementations, and any of vuaoffice's code (unavailable). 885 forks exist; three carry real work
+and were examined here.
