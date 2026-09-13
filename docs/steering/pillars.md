@@ -1,88 +1,152 @@
 # officebay — Pillars
 
-The dimensions on which this product succeeds or fails. Specs track work *within* a sprint;
-pillars track health *across* the product. Every sprint advances ≥1.
+The dimensions on which the whole fork succeeds or fails. Inherited behavior counts as officebay
+behavior: a sprint may add no replacement code and still advance a pillar by exposing, connecting,
+protecting, or verifying what genoffice already supplies.
 
----
+## P1 · Office surface and format fidelity
 
-## P1 · Reading and marking surface
+**What it means.** People can read, edit, mark, save, reopen, navigate, and print real documents
+across the inherited applications without officebay degrading those workflows.
 
-**What it means.** The reader — page rendering, selection, highlights, typed notes, navigation.
-The thing a person touches for hours.
+**Healthy when.** Representative PDF, document, spreadsheet, slide, Markdown, and HTML journeys pass
+end to end; saves preserve expected content and format behavior; annotations and authored edits
+survive reopen; loading, empty, error, and accessibility states remain usable.
 
-**Healthy when.**
-1. The owner reads real documents in officebay instead of another viewer.
-2. Highlights and typed notes reach the agent verbatim, with the text they cover.
-3. Marks survive re-parse, edit and re-render.
+**Current state.** **Inherited and substantial, incompletely baselined.** genoffice ships six format
+applications plus a shell. PDF selection, highlights, typed notes, ink capture and persistence,
+virtual margins, editing, and print exist. officebay has not yet recorded a compact regression
+baseline for the inherited journeys it intends to carry across upstream rebases.
 
-**Current state.** 🟢 **Inherited and working.** genoffice ships it: `annotations.ts` is a single
-rotation-aware screen↔page transform in PDF points; `NoteMargin.tsx` is a real virtual margin with
-leader lines; `read_annotations` resolves the text under each highlight via `textUnderRect`.
-**Ink is captured too** — `DrawLayer.tsx` records strokes as `paths: number[][]` in PDF page space
-and `save-pdf.ts:297` writes real `/Ink` annotations.
+**Known gaps.** Ink subtype 15 is omitted from the agent read-back catalog. Dragged-apart placement
+and shared read-only projection surfaces do not ship. Branding remains an officebay release concern.
 
-**Gaps.** (a) The agent cannot read back ink the app itself wrote: `MARKUP_TYPE_BY_ANNOT` is
-`{9,10,12}` and subtype 15 is absent — one map entry. (b) Of the four mark renderings in
-`product.md` §4, only overlay and virtual margin ship; **dragged-apart does not exist** and is the
-distinctive one.
+## P2 · Agent and workflow composition
 
----
+**What it means.** Existing document tools, the shared agent loop, project APIs, and
+`@picobay/engine` compose into complete user workflows instead of parallel subsystems.
 
-## P2 · Document model (L1)
+**Healthy when.** The agent can invoke existing capabilities through narrow registrations; long work
+runs by explicit units with resume and coverage; results return through existing format write
+primitives; provider errors, cancellation, cost, and partial failure remain visible.
 
-**What it means.** A structural twin of the source with stable ids: typed blocks in reading order,
-levels, spans, provenance back into page space. Everything else anchors into it.
+**Current state.** **Strong parts, missing composition.** genoffice ships the agent runtime and
+per-format tools. `project-store` and relevant IPC already supply project-file listing and timeline
+data. `@picobay/engine` supplies mapped transformation, caching, guards, and fan-out. The engine host,
+project tool registrations, and a proven end-to-end transformation journey do not yet exist.
 
-**Healthy when.** "§19.1" is an object with an id, a level, a page and a span — not a substring
-search. A citation survives a re-parse. An anchor that no longer resolves says so.
+## P3 · Document identity, anchors, and lineage
 
-**Current state.** ❌ **Not started, and nothing upstream has it.** `pdf2docx` builds an `IrDocument`
-but discards it after conversion; `file-parse` returns flat text. Provenance is page-grained by
-construction. `selfref.mjs` (carried from pdfbay) proves content-addressed `self_ref` survives
-re-parse but dies on a heading edit — the tradeoff is unresolved.
+**What it means.** Source structure, authored state, and generated artifacts have identities that can
+be followed across parse, edit, move, and transformation.
 
----
+**Healthy when.** A structural unit has typed identity and provenance into its source; anchors point
+down into source/document layers; stale, moved, removed, and rewritten states are distinguishable;
+every generated artifact identifies its source units and workflow.
 
-## P3 · Transformation and artifacts
+**Current state.** **Partial substrates, shared contract absent.** PDF page coordinates,
+ProseMirror mapping, annotation dictionaries with custom keys, project/file identity, and
+cross-process file-change checks already exist. There is no shared cross-format L1 contract, no
+settled identity behavior under source edits, and no generated-artifact lineage.
 
-**What it means.** Map over a document: chunk, generate per unit, merge, review, write back — with
-resume and provable coverage.
+## P4 · Grounded ingestion and retrieval
 
-**Healthy when.** "Cheatsheet from chapter 19" and "humanize this 60-page doc" both complete, and
-you can tell which units were actually processed.
+**What it means.** officebay extracts enough trustworthy structure and content from whatever arrives,
+and clearly signals when it cannot.
 
-**Current state.** 🟡 **Exists, not connected.** `@picobay/engine` shipped it (spec 07, CLOSED
-2026-09-10) and `source-to-artifact` runs on it, with a prompt cache and guards measured against
-real failures. genoffice has the per-unit *write* primitives and **no map**: a 60-page rewrite
-elides 1,180 blocks from the model's view and tells it to extrapolate indexes, then offers a
-Continue button. Coverage is unverifiable. The seam between the two does not exist yet.
+**Healthy when.** The system uses the cheapest sufficient existing path, escalates based on measured
+need, preserves source evidence for uncertain content, and never presents reconstructed mathematics
+as extracted fact. Retrieval returns inspectable source anchors across the open document and project.
 
----
+**Current state.** **Symbols recover; structure does not.** Existing parsers cover PDF and Office
+formats for current application needs; platform OCR rescues scans; pdf.js works well on
+Unicode-mapped prose and mathematics. Docling is useful as a structural schema/producer for Office
+formats but measured unsuitable as the mathematics parser. Existing project storage is not yet an
+agent-visible corpus tool.
 
-## P4 · Ingestion
+**Measured 2026-09-13** on an encrypted Type1 mathematics text (Magnus & Neudecker, ch. 2, 16
+pages): glyph recovery is clean — 386 mathematical glyph occurrences including 94 `⊗`, and zero
+U+FFFD replacement characters. Structure recovery fails — zero line breaks, 40 word joins fused
+across layout boundaries, display equations flattened into prose, matrix layout destroyed. So the
+binding constraint on a grounded mathematics answer is the **absence of a structural layer**
+(reading order, block typing, equation regions), not glyph loss. This narrows the earlier
+expectation that legacy CM/Type1 documents silently drop operators: on this document they do not.
+Evidence and reproduction: `docs/research/2026-09-13-math-extraction-probe.md`,
+`tools/probe-math-extraction.mjs`.
 
-**What it means.** Getting any document a worker or student has into a form the rest can use —
-modern Quarto, legacy textbooks, scans, Office files.
+**Open evidence need.** Whether page raster input improves answer accuracy—not merely
+transcription—has not been measured on a corpus controlling for model priors. Separately, whether
+`packages/pdf2docx` already reconstructs block structure via its pdfium layout analysis is unmeasured
+and would change what the L1 layer must build versus inherit.
 
-**Healthy when.** A math-dense PDF answers questions from what is on the page, and the system knows
-which documents it cannot read well.
+## P5 · Work-anchored creation
 
-**Current state.** 🟡 **Partial, with a silent failure.** pdf.js text works for prose; platform OCR
-rescues scans into the same index. Math is the hole: on a legacy CM-encoded PDF the Σ is dropped
-entirely and glyphs arrive in draw order, so answers are reconstructed from priors and are
-confidently wrong when priors do not cover the equation. **Detecting which class a page is in is
-unsolved** — three signals tried and rejected (font names are opaque subsetted ids, `getTextContent`
-zeroes the height on empty items, width thresholds rank the clean page worse than the degraded one).
+**What it means.** Reading state can drive editable production without turning the product into an
+automatic summarizer or detached pipeline workbench.
 
----
+**Healthy when.** A reader can select or mark source material, invoke an intentional transformation,
+inspect coverage and provenance, edit the result, and navigate back to the supporting source. Real
+use shows marks reduce context reconstruction rather than being ignored.
 
-## P5 · Provenance and durability
+**Current state.** **Hypothesis with most pieces disconnected.** Marks and notes ship; write
+primitives ship; mapped transformation ships externally. Exporting anchored marks as pipeline input
+and returning a provenance-bearing artifact do not. This pillar remains unproven until one vertical
+slice is used on real work.
 
-**What it means.** Knowing what produced a thing, and not losing what a person authored.
+## P6 · Fork sustainability and release identity
 
-**Healthy when.** "What produced this paragraph?" is answerable. Marks and reader-made links — the
-only non-reproducible state — survive a year, a re-parse and a machine change.
+**What it means.** officebay remains economically rebaseable, legally distinct, testable, and
+shippable as upstream changes.
 
-**Current state.** ❌ **Not started.** `create_document` writes a file with no link to its source.
-`project-store` persists per-file chat but is invisible to the agent. Nothing records what an
-artifact was built from, and nothing marks an anchor as stale when its source moves.
+**Healthy when.** New behavior lives in new packages/files where practical; every upstream edit is
+small and named; snapshot rebases include capability and `ee/` audits; regression evidence covers
+changed journeys; distributed surfaces use officebay branding; provenance and licence records are
+current.
+
+**Current state.** **Policy established, operational proof pending.** The fork is pinned and backed
+up, upstream snapshot behavior is documented, and current officebay commits are additive. No
+upstream rebase has yet exercised the policy, and no officebay-branded release has been produced.
+
+**Measured churn map.** Rebase cost concentrates in two surfaces, and a sprint proposing to edit
+either owes a justification that survives the next snapshot:
+`apps/docs/src/renderer/editor/` (every active fork edited it heavily) and
+`apps/slides/src/main/session-state.ts` + `slides-main.ts` (upstream published its intent to change
+them). Evidence: `docs/research/2026-09-13-fork-landscape.md`,
+`docs/research/2026-09-13-component-decomposition.md`.
+
+## P7 · Operational independence and product identity
+
+**What it means.** officebay runs, and can be shipped, without depending on a service owned by
+upstream. The suite reaches the user under officebay's own name, keys, and update channel.
+
+**Healthy when.** Every AI capability works against a user-supplied or self-hosted provider; no code
+path silently redirects to a host we do not control; the marks, icons, package scope, and update feed
+are officebay's; an automated check fails if a build can still reach the upstream service.
+
+**Current state.** **Dependency mapped, removal not started.** The inherited app is a client of
+Genspark's hosted service in four places — `packages/ai-search/src/gsk.ts` (search, image search,
+slide generation, transcription), `packages/ai-search/src/genoffice-auth.ts` (OAuth device flow and
+stored token), `apps/shell/src/main/cloud-projects.ts` (project list sync), and
+`slides:cloud-page-generate` (server-side deck generation). Seventeen providers already exist, so
+bring-your-own-key operation is inherited capability, not new work.
+
+**Known trap.** `activeProvider()` in `packages/ai-provider/src/providers.ts` falls back to
+`genspark` whenever a provider configuration is incomplete, so a half-configured custom provider
+appears to work while talking to upstream's service. Cutting the dependency without fixing that
+fallback converts a silent redirect into a crash; both belong in the same change.
+
+**Sizing.** A comparable fork (`besliky/airy`) performed provider removal, reference sweep, egress
+guard, package rescoping, rebrand, and a self-hosted updater in 39 commits — evidence that this is a
+bounded workstream rather than an open-ended one. Detail:
+`docs/research/2026-09-13-fork-landscape.md`.
+
+## Balance rule
+
+A sprint must name the pillars it advances and must not silently regress another. In particular:
+
+- P5 work cannot bypass P1's inherited editing and reading quality.
+- P4 ingestion work must feed P3 identity rather than create an isolated parse cache/schema.
+- P2 composition should precede replacement infrastructure.
+- Every sprint touching upstream files must report its P6 rebase footprint.
+- P2 and P4 work must not add a caller to the hosted-service path P7 exists to remove; new AI
+  capability targets the provider abstraction in `packages/ai-provider`.

@@ -1,161 +1,183 @@
 # officebay — Technical policy
 
-Binding decisions and the stack. Every claim here was read from source or measured; where something
-is undecided it says so rather than guessing.
+This policy distinguishes what the fork inherits, what it exposes through narrow seams, what it
+must genuinely add, and what remains an experiment. Planned boundaries are not described as shipped
+architecture.
 
-## 1. The stack, and who supplies each part
+## 1. Classification before implementation
 
-```
-┌─ shell ────────────────────────────────────────────────────────────┐
-│ Electron 43 · WebContentsView tabs · electron-vite · React 19      │  upstream
-│ apps/{shell,docs,sheets,slides,pdf,markdown,html}                  │
-├─ document engines ─────────────────────────────────────────────────┤
-│ pdf.js (render+text) · pdfium wasm (content-stream edit)           │  upstream
-│ pdf-lib (assembly) · Tiptap/ProseMirror · Rust xlsx sidecar        │
-├─ agent ────────────────────────────────────────────────────────────┤
-│ @genoffice/agent-core  ReAct loop, compaction, guards, snapshots   │  upstream
-│ @genoffice/ai-provider anthropic · gemini · openai-compatible      │
-├─ officebay additions ──────────────────────────────────────────────┤
-│ packages/docmodel      L1: DoclingDocument-subset, stable self_ref │  NEW
-│ packages/marks         marks → anchored, exportable pipeline input │  NEW
-│ engine host tool       hands a block range to @picobay/engine      │  NEW
-│ ingestion routing      Mathpix · VLM raster · pdf.js · platform OCR│  NEW
-├─ transformation ───────────────────────────────────────────────────┤
-│ @picobay/engine        Workflow IR → LangGraph.js, Apache-2.0      │  existing, external
-│                        cache · drift/degeneracy guards · fan-out   │
-└────────────────────────────────────────────────────────────────────┘
-```
+For every proposed capability, inspect in this order:
 
-## 2. Settled decisions
+1. Existing implementation in `apps/*` and `packages/*`.
+2. Existing main/preload/renderer boundary and tool registration.
+3. Existing external implementation in `@picobay/engine` or the ingestion toolchain.
+4. Only then, a new officebay package.
 
-1. **Electron + TypeScript.** Inherited. Not Tauri — upstream is Electron and rewriting the shell
-   forfeits the reason to fork.
-2. **The fork is additive.** New packages; narrow, named edits to upstream files. Upstream `main`
-   advances by squashed `Sync snapshot` commits, so we **rebase onto snapshots**, never merge
-   PR-by-PR. A sprawling diff into `apps/pdf/src/renderer/App.tsx` (8,652 lines) makes every future
-   snapshot painful.
-3. **`@picobay/engine` for transformation, not Mastra and not a new orchestrator.** It shipped the
-   map-over-a-document problem on 2026-09-10 (spec 07) with guards measured against real failures:
-   prompt cache keyed `sha256(model+images+prompt)` with guards *before* the write, degeneracy
-   refused below 0.35 distinct-lines, `policy.drift` discarding a >5% divergent repair.
-4. **DoclingDocument as the L1 *schema*, never as the math parser.** Docling scores 0/70 on math
-   assertions — it emits `formula-not-decoded`. Borrow `self_ref`, `label`, `level`, `prov`;
-   write our own producer. No Python on the desktop.
-5. **Zero Python on the desktop; Python allowed on the online tier.** Verified: no `packages/*`
-   declares an `electron` dependency, so the engine layer runs anywhere Node runs. Electron is the
-   desktop host, not the architecture — which is what makes a web tier real rather than aspirational.
-6. **Kuzu and LadybugDB are not storage-compatible.** The 4-byte header (`LBUG`/`KUZU`) decides;
-   a file written by one is unreadable by the other. Any store tooling asserts the magic.
-7. **Ink keeps strokes + recognition + raster crop together**, so a wrong recognition is recoverable
-   rather than invisible. Strokes and persistence already ship (§4).
+Classify the result as **capability**, **exposure**, **registration**, or **composition** gap. Record
+the existing owner and the proving test before editing it. Missing agent access is not evidence of a
+missing product capability.
 
-## 3. Ingestion — a routing table, not a parser choice
+## 2. Inherited contracts
 
-No single parser wins, and the reader cannot be asked which kind of document they have.
+These are the baseline architecture unless a later decision explicitly supersedes one.
 
-| input | parser | evidence |
+| Contract | Existing owner | officebay rule |
 |---|---|---|
-| PDF, prose | pdf.js text layer | free, instant, adequate |
-| **PDF, math-dense** | **Mathpix** or **frontier VLM on the page raster** | Mathpix ≈ reference, 3.1 s/page, ~$0.005/page. VLM: **88.8%** (Opus 5), **87.1%** (Gemini 3.6 Flash) with *no parser at all* |
-| scanned | platform OCR (macOS Vision / Windows.Media.Ocr) | ships; fires when `isScannedText()` — under 8 non-whitespace chars |
-| docx/pptx/xlsx, structure wanted | Docling → `DoclingDocument` | native Office parsing, real L1 |
-| docx/pptx/xlsx, text only | `packages/file-parse` | ships, zero Python |
-| web page | Readability + Turndown | implemented in `source-to-artifact` |
+| Desktop shell and application lifecycle | Electron shell and app main processes | extend; do not replace with another desktop runtime |
+| PDF render and text | pdf.js | reuse its loaded document/page/canvas paths |
+| PDF content-stream edits | pdfium WASM and existing PDF services | preserve existing save semantics |
+| PDF annotations and ink | renderer drawing/annotation code plus pdf-lib save path | widen catalogs and payloads before inventing storage |
+| Rich document editing | existing Tiptap/ProseMirror applications | use format write primitives already exposed |
+| Agent loop | `@genoffice/agent-core` | extend its typed tool/image/provider contracts; no second loop |
+| Providers | `@genoffice/ai-provider` | preserve provider-specific capability and failure handling |
+| Project/file/chat state | `packages/project-store` plus shell IPC | expose existing APIs before adding a corpus database |
+| Hosted service client | `packages/ai-search` (`gsk.ts`, `genoffice-auth.ts`), `apps/shell/src/main/cloud-projects.ts`, `slides:cloud-page-generate` | **to be removed** under P7. Do not add callers. New AI work targets the provider abstraction in `packages/ai-provider`, never the hosted path. |
+| Transformation | `@picobay/engine` | host and configure it; do not rebuild map/resume/cache/guards |
+| Flat text parsing | `packages/file-parse` and current PDF indexing | retain for cases that do not require structural L1 |
 
-### 3.1 The unsolved part: detection
+All inherited journeys changed by officebay require regression evidence. A green test for the new
+package alone does not prove the fork still works.
 
-Routing wants to send *only* degraded pages to the expensive path. **Three detectors were tried and
-all failed:**
+## 3. Narrow extension seams already verified
 
-| signal | why it failed |
-|---|---|
-| math font names (`CMEX`, `CMSY`) | pdf.js reports subsetted fonts as opaque ids (`g_d0_f12`), never `CMEX10` |
-| empty `str` with a glyph box | `getTextContent()` reports `height: 0` on every empty item, including the dropped Σ |
-| empty `str`, width > 5 | inter-word spacing swamps it — the *clean* page scored 15, the *degraded* page 6 |
+### Annotation read-back
 
-So **routing cannot depend on cheap per-page detection.** The viable designs are routing on
-*document class* (producer metadata, font encoding tables, whether any page needed OCR) or routing
-on *cost* (send everything to the good path). This is an open question, not a solved one.
+Ink capture and `/Ink` persistence ship. The immediate gap is read-back: subtype 15 is absent from
+the annotation catalog used by the agent path. Existing custom annotation keys show that officebay
+anchor, recognition, or crop references can travel in the current annotation mechanism where PDF
+semantics permit it.
 
-### 3.2 What `read_pages` actually does today
+This does not solve placement outside page space. Dragged-apart content belongs to the outer layout,
+not the PDF annotation dictionary.
 
-`getTextContent()` — the glyph/text stream, concatenated in **draw order**. No rasterisation, no
-`page.render()`. Two failure classes follow:
+### Project and cross-document access
 
-- **Legacy CM/Type1**: unmapped glyphs yield `str: ""`. Goodfellow eq. 3.9's Σ arrives as
-  `{"str":"", "font":"g_d0_f12", "w":18.97}` — 19 points wide, zero text, silently gone.
-- **Draw order ≠ reading order**: `P(a,b,c)=P(a|b,c)P(b,c)` arrives as `P , , P , P ,(a b c) = …`.
+`project-store` supplies project-file and timeline APIs, and main-process IPC exposes relevant calls.
+The first cross-document increment is a typed, permission-aware tool registration using those APIs.
+A new vector/graph/corpus store requires evidence that this substrate and current search paths cannot
+support the selected user journey.
 
-A frontier model often still emits correct LaTeX — **reconstruction from priors, not extraction**.
-Right on canonical results, unconstrained on novel ones, and **well-formed either way**, so the
-failure is silent.
+### Agent images
 
-### 3.3 Caching
+The shared agent/provider contracts carry images and at least one existing application uses them.
+Any PDF raster experiment must reuse that contract and the PDF renderer's existing loaded-page path.
+It must verify provider support, page selection, latency, cost, privacy, cancellation, and failure
+behavior rather than assuming the change is only a call-site argument.
 
-`@picobay/engine` already caches prompts with guards. **Do not build a second cache.** The one
-addition is a **parse cache**: Mathpix/VLM results content-addressed by
-`sha256(bytes) + parser + version` — and that *is* the L1 store, not a layer in front of one.
+### Long transformations
 
-## 4. The annotation layer — extend, do not rewrite
+Existing format tools write document units; `@picobay/engine` maps work over explicit units with
+resume, coverage, caching, and guards. The missing seam is a host adapter with typed source units,
+job policy, progress/cancellation, and result application. It is a composition gap.
 
-The write path already constructs arbitrary annotation dictionaries through pdf-lib: `/Text`,
-`/Ink`, `/Square`, `/Circle`, `/Line`, `/Stamp`, `/Form`, `/IRT` reply threading, and custom keys
-(`GenOfficeFormField`, `GenOfficeStaticFormFills`). That last is the precedent for carrying our own
-payload — a `self_ref`, a recognition result, a crop id — without inventing a sidecar format.
+## 4. Genuinely new officebay boundaries
 
-**Ink already works**: `DrawLayer.tsx` captures strokes as `paths: number[][]` in PDF page space;
-`save-pdf.ts:297` writes real `/Ink` annotations with appearance streams. The gap is
-`MARKUP_TYPE_BY_ANNOT = {9,10,12}` — subtype 15 absent, so the app cannot read back ink it wrote.
-**One map entry**, then recognition and the crop.
+Names below describe intended ownership, not necessarily final package names.
 
-The genuine problem is **placement outside the page box**: an annotation's `/Rect` is page space,
-so a mark anchored to a reader-opened gap has no rect. That is the outer-layout question, not the
-annotation layer.
+### Shared document model
 
-## 5. Anchoring and staleness — the open design question
+A pure TypeScript package may own the minimum cross-format L1 contract:
 
-Anchors point **down**: L2 (marks, notes) references L1 ids and L0 page coordinates; nothing in L0
-or L1 knows L2 exists. Re-deriving L1 leaves L2 intact and *flags* what no longer resolves.
+- typed structural items in reading order;
+- stable/assigned identity semantics;
+- source-format provenance;
+- resolution and stale/orphan classification;
+- deterministic serialization and validation.
 
-pdfbay could assume "the PDF is never modified." **officebay cannot — genoffice is an editor.**
+Use a compatible subset of `DoclingDocument` concepts (`self_ref`, label, level, provenance) as a
+boundary schema. Do not use Docling as the mathematics parser, and do not require Python on the
+desktop to consume the schema.
 
-| what changed | `self_ref` | anchor state |
+One identifier need not pretend to solve both content identity and continuity through edits. The L1
+design must explicitly choose content IDs, assigned IDs, or aliases and define migration behavior.
+
+### Anchored authored state
+
+L2 state—marks, notes, links, gaps, generated blocks—references L1 identities and/or L0 source
+coordinates. Anchors point down; source and derived document representations do not know authored
+state exists. Re-derivation flags unresolved anchors rather than deleting them.
+
+Prefer existing native persistence per format. A shared sidecar/store is justified only for state
+that cannot live safely in the source format or existing project store.
+
+### Artifact lineage
+
+Generated outputs carry typed provenance to source file identities, source units, workflow/version,
+and run identity. Lineage must be readable by both the application and the user-facing inspector; a
+hidden metadata record alone does not satisfy the requirement.
+
+## 5. Ingestion policy
+
+No single parser is the architecture. Choose the cheapest sufficient path for the required output:
+
+| Need | Existing/default path | Escalation |
 |---|---|---|
-| re-parse with a better parser | stable | fine — proven in `spikes/docmodel/selfref.mjs` |
-| heading text edited | **changes** | orphaned, though the section still exists |
-| body edited under a heading | stable | valid ref, **stale quote** |
-| page inserted | stable | ref fine, citation page wrong |
+| PDF prose/text operations | pdf.js text layer | structural or visual parser when measured fidelity requires it |
+| Modern Unicode-mapped PDF math | pdf.js may be sufficient | raster/VLM or Mathpix only when the workflow requires stronger evidence |
+| Legacy or degraded PDF math | unresolved routing | measured raster/VLM or Mathpix path with visible grounding state |
+| Scans | existing platform OCR | stronger parser when OCR cannot support the journey |
+| Office text only | `packages/file-parse` | none unless structure is required |
+| Office structural L1 | existing format structure where available | Docling producer on online/optional sidecar tier |
+| Web source | Readability + Turndown implementation already used by source-to-artifact | preserve source URL and extraction provenance |
 
-A content-addressed id survives re-parse and dies on a heading edit; an assigned id does the
-reverse. **One id cannot carry both** — resolving this is the first task of the L1 sprint.
+Docling scored 0/70 on the carried mathematics assertions and emitted
+`formula-not-decoded`; it is a schema/Office-structure candidate, not the math parser.
 
-Cheap mechanism, no new subsystem: an anchor stores `{self_ref, sourceHash, quote}`. Hash mismatch →
-"source changed"; ref gone → orphaned; ref present but quote absent → "text under this anchor
-changed". That distinguishes *outdated*, *moved*, *removed* and *rewritten* with a hash compare and
-a substring check.
+A parse cache is content-addressed by source bytes plus parser identity/version and stores the
+resulting L1. Do not add a second model-response cache beside the engine cache.
 
-Two mechanisms already ship and should be the model: ProseMirror `DecorationSet` anchors
-(`aiQueueAnchors.ts`) that map through every edit and **collapse when their text dies**, and
-`isExternallyModified` (`{mtime, size, hash}`) for cross-process change.
+## 6. Experiments, not decisions
 
-## 6. Licensing
+### Math answer grounding
 
-Apache-2.0 throughout, **except `ee/`**. Audited 2026-09-11: `ee/` contains **LICENSE and README
-only — no code**, is reserved for "private deployment and offline license verification", takes no
-external contributions (CODEOWNERS), and has **zero hooks anywhere in the codebase**.
+Known: legacy CM/Type1 PDFs can drop operators and return draw order instead of reading order.
+Known: raster input improved transcription in the prior benchmark. Unknown: whether it improves
+answers when the model and questions are controlled.
 
-Nothing we depend on is behind that boundary, and its stated scope is deployment/licensing rather
-than document capability. **Re-check on every rebase**: if capabilities we rely on start landing
-there, the effective licence of what we need has changed.
+The experiment must compare text, raster, and both across Unicode/legacy and canonical/non-canonical
+cells; count confident contradiction separately; and measure latency/cost/provider coverage. Its
+result selects a product path. It is not itself the first mandatory implementation milestone.
 
-Apache-2.0 §6 does not license the GenOffice or Genspark marks — anything shipped carries its own
-branding.
+### Displacement and projection
 
-## 7. Open questions
+pdfbay's PageSlice/ProseMirror design is archived evidence, not officebay policy. First inspect
+whether genoffice's current PDF virtualization and layout can host reader-opened gaps or a read-only
+reflow projection with narrow changes. Prototype against realistic document length, ink latency,
+selection, scroll restoration, anchor mapping, and snapshot-rebase footprint.
 
-1. **Ingestion routing** (§3.1) — route on document class, or on cost? Detection is unsolved.
-2. **Anchor identity** (§5) — content-addressed, assigned, or an alias table carrying both?
-3. **Displacement** — can a reader-opened gap exist on a page-fixed surface, or does it require
-   replacing the outer layout? This decides whether §4's four renderings are all reachable.
-4. **Does a page raster improve *answers*, not just transcription?** The benchmark measured
-   transcription. The product claim is QA. Roughly one argument to `loop.run()` to test.
+## 7. Runtime and tier rules
+
+- Desktop remains Electron and TypeScript. No mandatory Python desktop runtime.
+- Python services are permitted in an online or explicitly optional sidecar tier.
+- `packages/*` remain Electron-free; host-specific behavior stays in application boundaries.
+- Provider/model/parser identities are typed configuration, not literals scattered through tools.
+- Credentials stay in the existing provider/config mechanisms; generated lineage records references
+  and public identity, never secret values.
+
+## 8. Fork discipline
+
+Upstream `main` advances through squashed snapshots. officebay rebases onto those snapshots.
+
+- Prefer new packages and files. A new editor surface belongs in a new `apps/` directory registered
+  through the shell's `TabManager` seam (`createXView` / `requestXClose` / `TabKind`) — a sibling
+  fork demonstrated this works for two added apps.
+- Keep each upstream edit narrow, named, and covered by a journey-level check.
+- **Two surfaces are expensive.** `apps/docs/src/renderer/editor/` is edited heavily by every active
+  fork; `apps/slides/src/main/session-state.ts` and `slides-main.ts` are named in upstream's own
+  published plan for a sync transport. Editing either needs a justification that survives the next
+  snapshot. Read from `journaledTxn`; do not change how it produces.
+- Do not edit upstream `CLAUDE.md`.
+- Recheck `ee/` on every rebase; it contains no capability code at the pinned baseline.
+- Before accepting a feature, report files changed under `apps/`, why each edit cannot live behind an
+  adapter, and the expected rebase conflict surface.
+- Preserve Apache-2.0 notices and replace upstream product marks in anything officebay distributes.
+
+## 9. Current decision queue
+
+1. Establish a compact inherited-journey baseline and extension inventory.
+2. Choose one vertical slice joining mark → mapped transform → editable result → visible lineage.
+3. Define only the L1/anchor fields that slice requires.
+4. Close cheap exposure/registration gaps encountered by that slice.
+5. Run ingestion experiments only where the slice proves current extraction insufficient.
+6. Defer replacement stores, generalized retrieval, displacement, and projection until a measured
+   workflow requires them.

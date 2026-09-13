@@ -54,7 +54,7 @@ Measured on the benchmark's 16 Goodfellow pages against the Mathpix reference, D
 `VlmPipeline` with its own MLX presets. Full table and reproduction in
 `pdf-to-md-benchmark` §4.8 — a **live** repo outside this fork, at
 `~/Dropbox/Projects/pdf-to-md-benchmark/analysis/report.md`. It is the scorer for the ingestion
-work and is deliberately not vendored here; see `.kiro/specs/01-consolidate-and-retire` R2.
+work and is deliberately not vendored here; see `.kiro/specs/01-fork-foundation` R1.
 
 | engine | math agreement | content | steady s/page |
 |---|---:|---:|---:|

@@ -44,3 +44,6 @@ _scratch-*
 
 # codegraph index (local, per-machine)
 .codegraph/
+
+# local editor settings (machine-specific)
+.vscode/
