@@ -48,11 +48,26 @@ They removed Genspark's account system and built a replacement — OIDC with iss
 gateway, refresh flow. That is not rebranding; it is standing up the same class of service under
 their own domain.
 
-### How the Office add-in works
+### The Office add-in is unreleased development work
+
+**It does not ship.** The v0.6.77 release contains `WisWork-0.6.77-arm64.dmg`, the matching `.zip`
+and `latest-mac.yml` — no manifest, no add-in bundle, nothing installable into Word.
+`electron-builder.cjs` does not package it (only `office-bridge`, the socket code, is a shell
+dependency), its manifest carries a `<!-- DEVELOPMENT-ONLY MANIFEST -->` marker, and reaching it
+requires cloning the repo, running `npm run dev:office` on `https://localhost:3000`, and sideloading
+XML by hand. The README names it once in a table of repo directories and never in Features or
+Download.
+
+So what WisWork ships is what upstream ships: one Electron office suite, rebranded, plus LaTeX
+editing and the Codex bridge. Treat the directory below as an in-progress experiment visible only
+because the repo is public — its write path is worth reading, its distribution strategy does not
+exist yet.
+
+### How it works, for the write path alone
 
 `apps/office-addin` is an **Office.js add-in** — Microsoft's supported extension platform, nothing
 patched or injected. Office embeds a browser; an add-in is a web page Office loads into a side panel
-and grants a document API. The manifest is what the user sideloads:
+and grants a document API. The development manifest:
 
 ```xml
 <OfficeApp xsi:type="TaskPaneApp">
@@ -201,7 +216,7 @@ system, and their own AI Router. Whether that code is good is unknowable from he
 | ----------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **airy**    | `tools/check-no-genspark.mjs`, adapted                             | Apache-2.0, 126 lines, CI-wired, and its scan/exclude split (code yes, attribution docs no) is the detail a first attempt gets wrong |
 | **airy**    | the de-genspark removal set                                        | three files verified absent from a shipping fork — the removal is survivable                                                         |
-| **airy**    | "the headless package never imports Electron-adjacent sources"     | states our own `packages/*` Electron-free rule as an enforced boundary, with protocol duplication as the accepted cost               |
+| **airy**    | protocol duplicated rather than imported across the Electron line  | `tech.md` §7 already requires `packages/*` to stay Electron-free; airy pays for it by duplicating the bridge protocol module         |
 | **airy**    | the live-bridge error vocabulary                                   | `stale_document`, `not_docs_tab`, `no_active_document` name failures officebay's write-back path will hit                            |
 | **WisWork** | the confirm → atomic write → fingerprint-verify → restore sequence | the template for mutating a document a human is editing, including `office_state_uncertain` as a distinct outcome from failure       |
 | **WisWork** | fail-closed over partial application                               | lists refuse rather than use non-transactional APIs                                                                                  |
@@ -223,7 +238,8 @@ All three rebrand, because Apache-2.0 gives the code and withholds the marks (§
 entry fee for shipping, not a strategy. The strategy is what each one does _after_:
 
 - **WisWork** rebuilt the hosted layer under its own domains (`wispaper.ai` identity, their Relay)
-  and reached into Microsoft Office. Maximum ambition, maximum carrying cost.
+  and added LaTeX plus a Codex bridge. Maximum ambition, maximum carrying cost. Its Office add-in is
+  unreleased, so no Microsoft-channel strategy is in evidence — only an experiment in the tree.
 - **airy** removed the hosted layer entirely and made the engines callable by coding agents. Minimum
   surface, cleanest rebase position, and the only one that documents its lineage honestly.
 - **vuaoffice** kept the product private and used GitHub purely as a distribution channel.
